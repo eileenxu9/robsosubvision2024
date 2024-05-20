@@ -3,6 +3,8 @@ import math
 import numpy as np
 import sys
 import math
+import rospy
+from std_msg.msg import Float64
 
 def main():
   # Create a Camera object
@@ -29,8 +31,11 @@ def main():
   mirror_ref = sl.Transform()
   mirror_ref.set_translation(sl.Translation(2.75,4.0,0))
   
-  i = 0
-  while i < 50:
+  rospy.init_node("depth", anonymous = True) 
+  pub = rospy.Publisher("depth_sensor", Float64)
+  rate = rospy.Rate(10)
+
+  while True:
     # A new image is available if grab() returns SUCCESS
     if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
       # Retrieve left image
@@ -46,14 +51,14 @@ def main():
       y = round(image.get_height() / 2)
       err, point_cloud_value = point_cloud.get_value(x, y)
 
-      if math.isfinite(point_cloud_value[2]):
+      if math.isfinite(point_cloud_value[2]) and not rospy.is_shutdown():
         distance = math.sqrt(point_cloud_value[0] * point_cloud_value[0] +
                             point_cloud_value[1] * point_cloud_value[1] +
                             point_cloud_value[2] * point_cloud_value[2])
-        print(f"Distance to Camera at {{{x};{y}}}: {distance}")
-      else : 
-        print(f"The distance can not be computed at {{{x};{y}}}")
-      i += 1    
+        # print(f"Distance to Camera at {{{x};{y}}}: {distance}")
+        pub.publish(Float64(distance))
+    rate.sleep()
+         
          
 
   # Close the camera
