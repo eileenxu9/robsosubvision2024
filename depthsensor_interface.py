@@ -2,67 +2,63 @@ import pyzed.sl as sl
 import math
 import numpy as np
 import sys
-import math
 import rospy
-from std_msg.msg import Float64
+from std_msgs.msg import Float64
 
 def main():
-  # Create a Camera object
-  zed = sl.Camera()
+    # Create a Camera object
+    zed = sl.Camera()
 
-  # Create a InitParameters object and set configuration parameters
-  init_params = sl.InitParameters()
-  init_params.depth_mode = sl.DEPTH_MODE.ULTRA  # Use ULTRA depth mode
-  init_params.coordinate_units = sl.UNIT.MILLIMETER  # Use meter units (for depth measurements)
+    # Create a InitParameters object and set configuration parameters
+    init_params = sl.InitParameters()
+    init_params.depth_mode = sl.DEPTH_MODE.ULTRA  # Use ULTRA depth mode
+    init_params.coordinate_units = sl.UNIT.MILLIMETER  # Use millimeter units for depth measurements
 
-  # Open the camera
-  status = zed.open(init_params)
-  if status != sl.ERROR_CODE.SUCCESS: #Ensure the camera has opened succesfully
-    print("Camera Open : "+repr(status)+". Exit program.")
-    exit()
+    # Open the camera
+    status = zed.open(init_params)
+    if status != sl.ERROR_CODE.SUCCESS:  # Ensure the camera has opened successfully
+        print("Camera Open : " + repr(status) + ". Exit program.")
+        exit()
 
-  # Create and set RuntimeParameters after opening the camera
-  runtime_parameters = sl.RuntimeParameters()
+    # Create and set RuntimeParameters after opening the camera
+    runtime_parameters = sl.RuntimeParameters()
 
-  image = sl.Mat()
-  depth = sl.Mat()
-  point_cloud = sl.Mat()
+    image = sl.Mat()
+    depth = sl.Mat()
+    point_cloud = sl.Mat()
 
-  mirror_ref = sl.Transform()
-  mirror_ref.set_translation(sl.Translation(2.75,4.0,0))
-  
-  rospy.init_node("depth", anonymous = True) 
-  pub = rospy.Publisher("depth_sensor", Float64)
-  rate = rospy.Rate(10)
+    rospy.init_node("depth", anonymous=True)
+    pub = rospy.Publisher("depth_sensor", Float64, queue_size=10)
+    rate = rospy.Rate(10)
 
-  while True:
-    # A new image is available if grab() returns SUCCESS
-    if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
-      # Retrieve left image
-      zed.retrieve_image(image, sl.VIEW.LEFT)
-      # Retrieve depth map. Depth is aligned on the left image
-      zed.retrieve_measure(depth, sl.MEASURE.DEPTH)
-      # Retrieve colored point cloud. Point cloud is aligned on the left image.
-      zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
+    try:
+        while not rospy.is_shutdown():
+            # A new image is available if grab() returns SUCCESS
+            if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
+                # Retrieve left image
+                zed.retrieve_image(image, sl.VIEW.LEFT)
+                # Retrieve depth map. Depth is aligned on the left image
+                zed.retrieve_measure(depth, sl.MEASURE.DEPTH)
+                # Retrieve colored point cloud. Point cloud is aligned on the left image
+                zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
 
-      # Get and print distance value in mm at the center of the image
-      # We measure the distance camera - object using Euclidean distance
-      x = round(image.get_width() / 2)
-      y = round(image.get_height() / 2)
-      err, point_cloud_value = point_cloud.get_value(x, y)
+                # Get distance value in mm at the center of the image
+                x = round(image.get_width() / 2)
+                y = round(image.get_height() / 2)
+                err, point_cloud_value = point_cloud.get_value(x, y)
 
-      if math.isfinite(point_cloud_value[2]) and not rospy.is_shutdown():
-        distance = math.sqrt(point_cloud_value[0] * point_cloud_value[0] +
-                            point_cloud_value[1] * point_cloud_value[1] +
-                            point_cloud_value[2] * point_cloud_value[2])
-        # print(f"Distance to Camera at {{{x};{y}}}: {distance}")
-        pub.publish(Float64(distance))
-    rate.sleep()
-         
-         
-
-  # Close the camera
-  zed.close()
+                if err == sl.ERROR_CODE.SUCCESS:
+                    if all(math.isfinite(coord) for coord in point_cloud_value[:3]):
+                        distance = math.sqrt(
+                            point_cloud_value[0]**2 +
+                            point_cloud_value[1]**2 +
+                            point_cloud_value[2]**2
+                        )
+                        pub.publish(Float64(distance))
+            rate.sleep()
+    finally:
+        # Close the camera
+        zed.close()
 
 if __name__ == "__main__":
-  main()
+    main()
